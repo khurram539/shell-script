@@ -10,8 +10,8 @@ ITEMS=(
     "/root/Boto3"
     "/root/My-Notes"
     "/root/Terraform-Notes"
-    "/root/update.sh"
-    "/root/transfer.sh"
+    "/root/shell-script/update.sh"
+    "/root/shell-script/transfer.sh"
 )
 
 # Loop through each item and copy it to the S3 bucket
