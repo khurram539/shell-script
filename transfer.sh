@@ -19,12 +19,12 @@ for ITEM in "${ITEMS[@]}"; do
     # Extract the folder or file name from the path
     ITEM_NAME=$(basename "$ITEM")
     
-    if [ -d "$ITEM" ]; then
+        if [ -d "$ITEM" ]; then
         # If it's a directory, use --recursive
-        aws s3 cp "$ITEM/" "$S3_BUCKET/$ITEM_NAME/" --recursive
+        aws s3 cp "$ITEM/" "$S3_BUCKET/$ITEM_NAME/" --recursive --storage-class GLACIER_IR
     else
         # If it's a file, do not use --recursive
-        aws s3 cp "$ITEM" "$S3_BUCKET/$ITEM_NAME"
+        aws s3 cp "$ITEM" "$S3_BUCKET/$ITEM_NAME" --storage-class GLACIER_IR
     fi
     
     # Check if the command was successful
@@ -35,8 +35,8 @@ for ITEM in "${ITEMS[@]}"; do
     fi
     
     # Pause for 5 seconds
-    sleep 2
-done
-
-# Prompt: Tells you that the backup is completed
-echo "Backup to S3 completed!"
+    sleep 3
+    done
+    
+    # Prompt: Tells you that the backup is completed
+    echo "Backup to S3 completed!"
