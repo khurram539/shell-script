@@ -1,17 +1,17 @@
 #!/bin/bash
 
 # Define the S3 bucket name
-S3_BUCKET="s3://aws-163544304364-scripts"
+S3_BUCKET="s3://aws-163544304364-repo"
 
 # Define the directories and files to back up
 ITEMS=(
-    "/root/100-days-of-Python"
-    "/root/Ansible"
-    "/root/Boto3"
-    "/root/My-Notes"
-    "/root/Terraform-Notes"
-    "/root/shell-script/update.sh"
-    "/root/shell-script/transfer.sh"
+    "/home/ubuntu/100-days-of-Python"
+    "/home/ubuntu/Ansible"
+    "/home/ubuntu/Boto3"
+    "/home/ubuntu/My-Notes"
+    "/home/ubuntu/Terraform-Notes"
+    "/home/ubuntu/shell-script/update.sh"
+    "/home/ubuntu/shell-script/transfer.sh"
 )
 
 # Arrays to keep track of successful and failed transfers
