@@ -12,6 +12,11 @@ ITEMS=(
     "/home/ubuntu/Terraform-Notes"
     "/home/ubuntu/shell-script/update.sh"
     "/home/ubuntu/shell-script/transfer.sh"
+<<<<<<< HEAD
+=======
+    "/home/ubuntu/Kubernetes"
+
+>>>>>>> 3ceec40 (Add new SH for EKS)
 )
 
 # Arrays to keep track of successful and failed transfers
@@ -41,7 +46,7 @@ for ITEM in "${ITEMS[@]}"; do
     fi
     
     # Pause for 5 seconds
-    sleep 5
+    sleep 2
 done
 
 # Echo the results
