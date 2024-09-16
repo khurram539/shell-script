@@ -10,7 +10,12 @@
 
 # Reload Apache Configuration
  sudo systemctl reload apache2
- 
+
+ # Restart Docker
+sudo systemctl restart docker
+
+# Restart Kubernetes (kubelet)
+sudo systemctl restart kubelet
 
 # Remove old Kernal
  sudo apt auto-remove -y 
