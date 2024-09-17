@@ -9,14 +9,10 @@ ITEMS=(
     "/home/ubuntu/Ansible"
     "/home/ubuntu/Boto3"
     "/home/ubuntu/My-Notes"
-    "/home/ubuntu/Terraform-Notes"
-    "/home/ubuntu/shell-script/update.sh"
-    "/home/ubuntu/shell-script/transfer.sh"
-<<<<<<< HEAD
-=======
+    "/home/ubuntu/Terraform-Notes"   
     "/home/ubuntu/Kubernetes"
+    "/home/ubuntu/shell-script"
 
->>>>>>> 3ceec40 (Add new SH for EKS)
 )
 
 # Arrays to keep track of successful and failed transfers
