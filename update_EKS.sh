@@ -9,3 +9,5 @@ sudo mv eksctl /usr/local/bin/eksctl
 
 # Verify the installation
 eksctl version
+
+# eksctl upgrade cluster --name EKS-Cluster --version 1.31 --approve
