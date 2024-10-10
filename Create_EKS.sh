@@ -48,3 +48,9 @@ kubectl config set-context $CONTEXT_NAME --namespace=$NAMESPACE
 
 # minikube start
 # minikube dashboard
+
+# To edit the cluster configuration YAML file, you can follow these steps:
+# eksctl get cluster --name <cluster_name> -o yaml > cluster.yaml
+# vim cluster.yaml
+# eksctl update cluster -f cluster.yaml
+# Replace <cluster_name> with the name of your cluster. This process will allow you to edit the cluster configuration and apply the changes.
