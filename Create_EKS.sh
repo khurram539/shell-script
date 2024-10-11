@@ -2,10 +2,10 @@
 
 # Define variables
 CLUSTER_NAME="EKS-Cluster"
-VERSION="1.30"
+VERSION="1.31"
 REGION="us-east-1"
 NODEGROUP_NAME="Worker"
-NODE_TYPE="t2.micro"
+NODE_TYPE="t2.medium"
 NODE_VOLUME_SIZE=20
 NODE_VOLUME_TYPE="gp3"
 NODES=2
