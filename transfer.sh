@@ -12,6 +12,9 @@ ITEMS=(
     "/home/ubuntu/Terraform-Notes"   
     "/home/ubuntu/Kubernetes"
     "/home/ubuntu/shell-script"
+    "/home/ubuntu/Docker"
+    "/home/ubuntu/Flask"
+    
 
 )
 
