@@ -34,16 +34,17 @@ S3_BUCKET="s3://aws-163544304364-repo"
 
 # Define the directories and files to back up
 ITEMS=(
-    "/home/khurram539/Code/100-days-of-Python"
-    "/home/khurram539/Code/Ansible"
-    "/home/khurram539/Code/Boto3"
-    "/home/khurram539/Code/My-Notes"
-    "/home/khurram539/Code/Terraform-Notes"   
-    "/home/khurram539/Code/Kubernetes"
-    "/home/khurram539/Code/shell-script"
-    "/home/khurram539/Code/Docker"
-    "/home/khurram539/Code/Flask"
+    "/home/ubuntu/100-days-of-Python"
+    "/home/ubuntu/Ansible"
+    "/home/ubuntu/Boto3"
+    "/home/ubuntu/My-Notes"
+    "/home/ubuntu/Terraform-Notes"   
+    "/home/ubuntu/Kubernetes"
+    "/home/ubuntu/shell-script"
+    "/home/ubuntu/Docker"
+    "/home/ubuntu/Flask"
     
+
 )
 
 # Arrays to keep track of successful and failed transfers
