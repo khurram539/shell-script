@@ -1,142 +1,111 @@
 #!/bin/bash
 
-# Set strict error handling
-set -euo pipefail
+# Perform a full upgrade of packages and dependencies
+sudo apt update
+sudo apt upgrade -y
+sudo apt dist-upgrade -y
 
-# Get the actual username (even when running with sudo)
-ACTUAL_USER=$(who am i | awk '{print $1}')
-HOME_DIR=$(eval echo ~${ACTUAL_USER})
+# Restart necessary services
+sudo systemctl restart docker
+sudo systemctl restart kubelet
 
-# Define log file and S3 bucket
-LOG_FILE="/var/log/system_update.log"
-TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+# Remove old kernels and unnecessary files
+sudo apt autoremove -y
+sudo apt-get clean
+
+# Uncomment the following lines to reload Apache configuration if needed
+# sudo systemctl reload apache2
+
+# Uncomment the following lines to transfer data to S3
+# aws s3 sync /home/ubuntu s3://aws-163544304364-backup/DevBox
+# aws s3 cp /root/100-days-of-Python/ s3://aws-163544304364-devbox/100-days-of-python/ --recursive
+
+# Uncomment the following line to list outdated pip packages
+ pip list --outdated # List Outdated Packages
+ sleep 3
+ pip list --outdated --format=columns > outdated.txt # Generate a list of outdated packages
+ for pkg in $(pip list --outdated --format=columns | awk 'NR>2 {print $1}'); do pip install --upgrade $pkg; done # Extract package names and update each package
+ pip list --outdated # List Outdated Packages
+ sleep 3
+ sudo apt update
+# Transfer Data to S3 Bucket
+
+# Define the S3 bucket name
 S3_BUCKET="s3://aws-163544304364-repo"
 
-# Function to log messages
-log_message() {
-    echo "[${TIMESTAMP}] $1"
-}
-
-# Function to check AWS credentials
-check_aws_credentials() {
-    log_message "Checking AWS credentials..."
-    # Use the actual user's AWS credentials
-    if ! AWS_SHARED_CREDENTIALS_FILE="$HOME_DIR/.aws/credentials" \
-        AWS_CONFIG_FILE="$HOME_DIR/.aws/config" \
-        aws sts get-caller-identity &>/dev/null; then
-        log_message "ERROR: AWS credentials are not configured properly"
-        log_message "Please run 'aws configure' to set up your credentials"
-        return 1
-    fi
-    log_message "AWS credentials verified successfully"
-    return 0
-}
-
-# Function to backup to S3
-backup_to_s3() {
-    log_message "Starting S3 backup..."
+# Define the directories and files to back up
+ITEMS=(
+    "/home/khurram539/Code/100-days-of-Python"
+    "/home/khurram539/Code/Ansible"
+    "/home/khurram539/Code/Boto3"
+    "/home/khurram539/Code/My-Notes"
+    "/home/khurram539/Code/Terraform-Notes"   
+    "/home/khurram539/Code/Kubernetes"
+    "/home/khurram539/Code/shell-script"
+    "/home/khurram539/Code/Docker"
+    "/home/khurram539/Code/Flask"
     
-    # Check AWS credentials first
-    if ! check_aws_credentials; then
-        log_message "Skipping backup due to credential issues"
-        return 1
-    fi
+
+)
+
+# Arrays to keep track of successful and failed transfers
+SUCCESSFUL_ITEMS=()
+FAILED_ITEMS=()
+
+# Loop through each item and copy it to the S3 bucket
+for ITEM in "${ITEMS[@]}"; do
+    # Extract the folder or file name from the path
+    ITEM_NAME=$(basename "$ITEM")
     
-    # Define the directories to back up
-    local ITEMS=(
-        "$HOME_DIR/Code/100-days-of-Python"
-        "$HOME_DIR/Code/Ansible"
-        "$HOME_DIR/Code/Boto3"
-        "$HOME_DIR/Code/My-Notes"
-        "$HOME_DIR/Code/Terraform-Notes"   
-        "$HOME_DIR/Code/Kubernetes"
-        "$HOME_DIR/Code/shell-script"
-        "$HOME_DIR/code/CloudFormation"
-    )
-
-    # Arrays to keep track of successful and failed transfers
-    local SUCCESSFUL_ITEMS=()
-    local FAILED_ITEMS=()
-    
-    # Exclude patterns for .git directories and other unnecessary files
-    local EXCLUDE_PATTERN="--exclude=*.git/* --exclude=*.pyc --exclude=__pycache__/*"
-    
-    for ITEM in "${ITEMS[@]}"; do
-        ITEM_NAME=$(basename "$ITEM")
-        
-        if [ ! -e "$ITEM" ]; then
-            log_message "WARNING: $ITEM does not exist, skipping..."
-            FAILED_ITEMS+=("$ITEM")
-            continue
-        fi
-        
-        log_message "Backing up $ITEM_NAME..."
-        
-        if [ -d "$ITEM" ]; then
-            if AWS_SHARED_CREDENTIALS_FILE="$HOME_DIR/.aws/credentials" \
-               AWS_CONFIG_FILE="$HOME_DIR/.aws/config" \
-               aws s3 cp "$ITEM/" "$S3_BUCKET/$ITEM_NAME/" \
-                --recursive \
-                --storage-class GLACIER_IR \
-                $EXCLUDE_PATTERN; then
-                log_message "Successfully backed up $ITEM"
-                SUCCESSFUL_ITEMS+=("$ITEM")
-            else
-                log_message "Failed to backup $ITEM"
-                FAILED_ITEMS+=("$ITEM")
-            fi
-        else
-            if AWS_SHARED_CREDENTIALS_FILE="$HOME_DIR/.aws/credentials" \
-               AWS_CONFIG_FILE="$HOME_DIR/.aws/config" \
-               aws s3 cp "$ITEM" "$S3_BUCKET/$ITEM_NAME" \
-                --storage-class GLACIER_IR; then
-                log_message "Successfully backed up $ITEM"
-                SUCCESSFUL_ITEMS+=("$ITEM")
-            else
-                log_message "Failed to backup $ITEM"
-                FAILED_ITEMS+=("$ITEM")
-            fi
-        fi
-        
-        sleep 2
-    done
-
-    # Print summary
-    echo "Backup to S3 bucket $S3_BUCKET is completed!"
-
-    if [ ${#SUCCESSFUL_ITEMS[@]} -ne 0 ]; then
-        echo "Successfully backed up the following items:"
-        for ITEM in "${SUCCESSFUL_ITEMS[@]}"; do
-            echo "- $ITEM"
-        done
-    fi
-
-    if [ ${#FAILED_ITEMS[@]} -ne 0 ]; then
-        echo "Failed to back up the following items:"
-        for ITEM in "${FAILED_ITEMS[@]}"; do
-            echo "- $ITEM"
-        done
-        return 1
-    fi
-    
-    return 0
-}
-
-# Main execution
-main() {
-    log_message "Starting backup to S3..."
-    backup_to_s3
-    local EXIT_CODE=$?
-
-    if [ $EXIT_CODE -eq 0 ]; then
-        log_message "Backup process completed successfully!"
+    if [ -d "$ITEM" ]; then
+        # If it's a directory, use --recursive
+        aws s3 cp "$ITEM/" "$S3_BUCKET/$ITEM_NAME/" --recursive --storage-class GLACIER_IR
     else
-        log_message "Backup process completed with errors!"
+        # If it's a file, do not use --recursive
+        aws s3 cp "$ITEM" "$S3_BUCKET/$ITEM_NAME" --storage-class GLACIER_IR
     fi
+    
+    # Check if the command was successful
+    if [ $? -eq 0 ]; then
+        echo "Successfully backed up $ITEM to $S3_BUCKET/$ITEM_NAME"
+        SUCCESSFUL_ITEMS+=("$ITEM")
+    else
+        echo "Failed to back up $ITEM"
+        FAILED_ITEMS+=("$ITEM")
+    fi
+    
+    # Pause for 5 seconds
+    sleep 2
+done
 
-    return $EXIT_CODE
-}
+# Echo the results
+echo "Backup to S3 bucket $S3_BUCKET is completed!"
 
-# Run main function
-main
-exit $?
+if [ ${#SUCCESSFUL_ITEMS[@]} -ne 0 ]; then
+    echo "Successfully backed up the following items:"
+    for ITEM in "${SUCCESSFUL_ITEMS[@]}"; do
+        echo "$ITEM"
+    done
+else
+    echo "No items were successfully backed up."
+fi
+
+if [ ${#FAILED_ITEMS[@]} -ne 0 ]; then
+    echo "Failed to back up the following items:"
+    for ITEM in "${FAILED_ITEMS[@]}"; do
+        echo "$ITEM"
+    done
+else
+    echo "No items failed to back up."
+fi 
+# Prompt: Notify that the update is completed
+echo "Your DevBox is updated!"
+ 
+#  The script is self-explanatory. It updates the packages and dependencies, restarts necessary services, removes old kernels and unnecessary files,
+#  and reloads Apache configuration if needed. 
+#  You can also uncomment the lines to transfer data to S3, list outdated pip packages, or perform any other tasks you want to automate. 
+#  To run the script, you can use the following command: 
+#  $ bash update.sh
+ 
+#  You can also make the script executable and run it as follows: 
+#  $ chmod +x update.sh
