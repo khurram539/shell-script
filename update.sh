@@ -42,8 +42,9 @@ ITEMS=(
     "/home/khurram539/Code/Terraform-Notes"   
     "/home/khurram539/Code/Kubernetes"
     "/home/khurram539/Code/shell-script"
-    "/home/khurram539/Code/Docker"
-    "/home/khurram539/Code/Flask"
+    "/home/khurram539/code/CloudFormation"
+    # "/home/khurram539/Code/Docker"
+    # "/home/khurram539/Code/Flask"
     
 
 )
