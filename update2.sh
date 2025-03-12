@@ -31,6 +31,25 @@ echo "🔄 Updating snap packages..."
 sudo snap refresh
 check_status "Snap package update"
 
+# Check for specific snap packages
+snap info notepad-plus-plus
+sudo snap refresh notepad-plus-plus
+check_status "Notepad++ snap update"
+
+# Download the latest Discord package
+wget -O ~/discord.deb "https://discordapp.com/api/download?platform=linux&format=deb"
+
+# Install the downloaded package
+sudo dpkg -i ~/discord.deb
+
+# Fix any dependency issues
+sudo apt-get install -f -y
+
+# Clean up
+rm ~/discord.deb
+
+echo "Discord has been updated to the latest version."
+
 # Update flatpak packages if installed
 if command -v flatpak >/dev/null 2>&1; then
     echo "🔄 Updating flatpak packages..."
