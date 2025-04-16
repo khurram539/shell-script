@@ -23,7 +23,7 @@ sudo apt-get clean
 # Uncomment the following line to list outdated pip packages
  pip list --outdated # List Outdated Packages
  sleep 3
- pip list --outdated --format=columns > outdated.txt # Generate a list of outdated packages
+#  pip list --outdated --format=columns > outdated.txt # Generate a list of outdated packages
  for pkg in $(pip list --outdated --format=columns | awk 'NR>2 {print $1}'); do pip install --upgrade $pkg; done # Extract package names and update each package
  pip list --outdated # List Outdated Packages
  sleep 3
@@ -35,15 +35,15 @@ S3_BUCKET="s3://aws-163544304364-repo"
 
 # Define the directories and files to back up
 ITEMS=(
-    "/home/khurram539/Code/100-days-of-Python"
-    "/home/khurram539/Code/Ansible"
-    "/home/khurram539/Code/Boto3"
-    "/home/khurram539/Code/My-Notes"
-    "/home/khurram539/Code/Terraform-Notes"   
-    "/home/khurram539/Code/Kubernetes"
-    "/home/khurram539/Code/shell-script"
-    "/home/khurram539/Code/Docker"
-    "/home/khurram539/Code/Flask"
+    "/home/kkhoja/Code/100-days-of-Python"
+    # "/home/kkhoja/Code/Ansible"
+    "/home/kkhoja/Code/Boto3"
+    "/home/kkhoja/Code/My-Notes"
+    "/home/kkhoja/Code/Terraform-Notes"   
+    # "/home/kkhoja/Code/Kubernetes"
+    "/home/kkhoja/Code/shell-script"
+    # "/home/kkhoja/Code/Docker"
+    # "/home/kkhoja/Code/Flask"
     
 
 )
