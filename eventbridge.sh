@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# filepath: /home/kkhoja/Code/shell-script/toggle_eventbridge.sh
+
 
 # Function to toggle the state of an EventBridge rule
 toggle_rule() {
