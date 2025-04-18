@@ -1,7 +1,4 @@
 #!/bin/bash
-
-
-
 # Function to toggle the state of an EventBridge rule
 toggle_rule() {
   local rule_name=$1
