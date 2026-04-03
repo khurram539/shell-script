@@ -35,9 +35,10 @@ S3_BUCKET="s3://aws-163544304364-repo"
 
 # Define the directories and files to back up
 ITEMS=(
-    "/home/kkhoja/Code/100-days-of-Python"
-    # "/home/kkhoja/Code/Ansible"
+    # "/home/kkhoja/Code/100-days-of-Python"
+    "/home/kkhoja/Code/Ansible"
     "/home/kkhoja/Code/Boto3"
+    "/home/kkhoja/Code/CloudFormation"
     "/home/kkhoja/Code/My-Notes"
     "/home/kkhoja/Code/Terraform-Notes"   
     # "/home/kkhoja/Code/Kubernetes"
