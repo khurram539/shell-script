@@ -13,9 +13,14 @@ NODE_TYPE="t2.small"
 NODE_VOLUME_SIZE=20
 NODE_VOLUME_TYPE="gp3"
 NODES=3
-PRIVATE_SUBNETS="subnet-0a9bdb8cd0195ad71,subnet-01d84fc63df0a696c,subnet-08d90b90e9b121c7e"
+SUBNET_A="subnet-08d90b90e9b121c7e"
+SUBNET_B="subnet-01d84fc63df0a696c"
+SUBNET_C="subnet-0a9bdb8cd0195ad71"
 NAMESPACE="ns-khurram"
 STACK_NAME="eksctl-${CLUSTER_NAME}-cluster"
+CONFIG_FILE="/tmp/${CLUSTER_NAME}-eksctl.yaml"
+
+SUBNET_IDS=("$SUBNET_A" "$SUBNET_B" "$SUBNET_C")
 
 # Preflight checks - prevent collision with existing cluster or stale stacks
 if aws eks describe-cluster --region "$REGION" --name "$CLUSTER_NAME" >/dev/null 2>&1; then
@@ -28,19 +33,54 @@ if aws cloudformation describe-stacks --region "$REGION" --stack-name "$STACK_NA
     exit 1
 fi
 
+# Ensure subnets used by managed nodes auto-assign public IPs.
+# This is required when subnets route to an Internet Gateway and nodegroups are not private-only.
+for subnet_id in "${SUBNET_IDS[@]}"; do
+    map_public_ip=$(aws ec2 describe-subnets \
+        --region "$REGION" \
+        --subnet-ids "$subnet_id" \
+        --query 'Subnets[0].MapPublicIpOnLaunch' \
+        --output text)
+
+    if [[ "$map_public_ip" != "True" ]]; then
+        echo "Enabling MapPublicIpOnLaunch for subnet $subnet_id"
+        aws ec2 modify-subnet-attribute \
+            --region "$REGION" \
+            --subnet-id "$subnet_id" \
+            --map-public-ip-on-launch
+    fi
+done
+
+# Create EKS cluster config to ensure subnets are passed to managed nodegroup
+cat > "$CONFIG_FILE" <<EOF
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+    name: ${CLUSTER_NAME}
+    region: ${REGION}
+    version: "${VERSION}"
+
+autoModeConfig:
+    enabled: false
+
+vpc:
+    id: ${VPC_ID}
+    subnets:
+        public:
+            ${REGION}a:
+                id: ${SUBNET_A}
+            ${REGION}b:
+                id: ${SUBNET_B}
+            ${REGION}c:
+                id: ${SUBNET_C}
+
+managedNodeGroups:
+    - { name: ${NODEGROUP_NAME}, instanceType: ${NODE_TYPE}, desiredCapacity: ${NODES}, volumeSize: ${NODE_VOLUME_SIZE}, volumeType: ${NODE_VOLUME_TYPE}, ssh: { allow: true, publicKeyName: ${SSH_KEYPAIR_NAME} } }
+EOF
+
 # Create EKS cluster with managed node group
-eksctl create cluster \
-    --name "$CLUSTER_NAME" \
-    --version "$VERSION" \
-    --region "$REGION" \
-    --vpc-private-subnets "$PRIVATE_SUBNETS" \
-    --nodegroup-name "$NODEGROUP_NAME" \
-    --ssh-access \
-    --ssh-public-key "$SSH_KEYPAIR_NAME" \
-    --node-type "$NODE_TYPE" \
-    --nodes "$NODES" \
-    --node-volume-size "$NODE_VOLUME_SIZE" \
-    --node-volume-type "$NODE_VOLUME_TYPE"
+eksctl create cluster -f "$CONFIG_FILE"
 
 # Refresh kubeconfig using the supported AWS EKS path
 aws eks update-kubeconfig --region "$REGION" --name "$CLUSTER_NAME"
