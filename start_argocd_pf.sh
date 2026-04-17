@@ -8,7 +8,7 @@ REGION="us-east-1"
 CLUSTER_NAME="EKS-Cluster"
 NAMESPACE="argocd"
 SERVICE="argocd-server"
-LOCAL_PORT="8888"
+LOCAL_PORT="9191"
 REMOTE_PORT="443"
 LOG_FILE="/home/kkhoja/argocd-port-forward.log"
 
