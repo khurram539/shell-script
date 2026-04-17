@@ -100,3 +100,11 @@ kubectl config set-context --current --namespace="$NAMESPACE"
 # eksctl get cluster --name <cluster_name> -o yaml > cluster.yaml
 # vim cluster.yaml
 # eksctl update cluster -f cluster.yaml
+
+
+
+# Scale the node group to zero (clean shutdown):
+# eksctl scale nodegroup --cluster EKS-Cluster --region us-east-1 --name Worker --nodes 0 --nodes-min 0 --nodes-max 0
+
+# Bring them back later:
+# eksctl scale nodegroup --cluster EKS-Cluster --region us-east-1 --name Worker --nodes 1 --nodes-min 1 --nodes-max 1
