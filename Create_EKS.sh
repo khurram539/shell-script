@@ -13,7 +13,7 @@ NODE_TYPE="t2.small"
 NODE_VOLUME_SIZE=20
 NODE_VOLUME_TYPE="gp3"
 NODES=3
-PRIVATE_SUBNETS="us-east-1a=subnet-08d90b90e9b121c7e,us-east-1b=subnet-01d84fc63df0a696c,us-east-1c=subnet-0a9bdb8cd0195ad71"
+PRIVATE_SUBNETS="subnet-0a9bdb8cd0195ad71,subnet-01d84fc63df0a696c,subnet-08d90b90e9b121c7e"
 NAMESPACE="ns-khurram"
 STACK_NAME="eksctl-${CLUSTER_NAME}-cluster"
 
