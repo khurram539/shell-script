@@ -7,8 +7,18 @@ LOG_FILE="$HOME/devbox_update.log"
 S3_BUCKET="s3://aws-163544304364-repo"
 DATE=$(date +%Y-%m-%d_%H-%M-%S)
 
-# Ensure AWS CLI works in cron
-AWS_CMD=$(which aws)
+# Ensure AWS CLI works in cron/sudo contexts
+RUN_USER="${SUDO_USER:-$USER}"
+RUN_HOME=$(eval echo "~$RUN_USER")
+AWS_CMD=""
+
+if command -v aws >/dev/null 2>&1; then
+    AWS_CMD=$(command -v aws)
+elif [ -x "$RUN_HOME/.local/bin/aws" ]; then
+    AWS_CMD="$RUN_HOME/.local/bin/aws"
+elif [ -x "$HOME/.local/bin/aws" ]; then
+    AWS_CMD="$HOME/.local/bin/aws"
+fi
 
 # Items to back up
 ITEMS=(
@@ -27,6 +37,14 @@ FAILED_ITEMS=()
 # -----------------------------
 log() {
     echo "$1" | tee -a "$LOG_FILE"
+}
+
+run_aws() {
+    if [ "$(id -u)" -eq 0 ] && [ -n "$SUDO_USER" ]; then
+        sudo -u "$SUDO_USER" "$AWS_CMD" "$@"
+    else
+        "$AWS_CMD" "$@"
+    fi
 }
 
 log "=============================="
@@ -93,7 +111,7 @@ if [ -z "$AWS_CMD" ]; then
     log "AWS CLI not found"
     AWS_OK=false
 else
-    if ! $AWS_CMD sts get-caller-identity &> /dev/null; then
+    if ! run_aws sts get-caller-identity &> /dev/null; then
         log "AWS CLI not configured properly"
         AWS_OK=false
     fi
@@ -109,11 +127,11 @@ if [ "$AWS_OK" = true ]; then
         ITEM_NAME=$(basename "$ITEM")
 
         if [ -d "$ITEM" ]; then
-            $AWS_CMD s3 cp "$ITEM/" "$S3_BUCKET/$ITEM_NAME/" \
+            run_aws s3 cp "$ITEM/" "$S3_BUCKET/$ITEM_NAME/" \
                 --recursive \
                 --storage-class GLACIER_IR >> "$LOG_FILE" 2>&1
         else
-            $AWS_CMD s3 cp "$ITEM" "$S3_BUCKET/$ITEM_NAME" \
+            run_aws s3 cp "$ITEM" "$S3_BUCKET/$ITEM_NAME" \
                 --storage-class GLACIER_IR >> "$LOG_FILE" 2>&1
         fi
 
