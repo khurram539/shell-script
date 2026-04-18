@@ -1,4 +1,4 @@
-#!/bin/bash
+.#!/bin/bash
 set -euo pipefail
 
 # Ensure predictable PATH in non-interactive boot contexts
@@ -23,6 +23,9 @@ while true; do
   # Clean up stale listeners on the local port if present
   pkill -f "kubectl port-forward svc/${SERVICE} -n ${NAMESPACE} ${LOCAL_PORT}:${REMOTE_PORT}" || true
 
-  kubectl port-forward "svc/${SERVICE}" -n "$NAMESPACE" "${LOCAL_PORT}:${REMOTE_PORT}" >> "$LOG_FILE" 2>&1 || true
+  kubectl port-forward "svc/${SERVICE}" -n "$NAMESPACE" "${LOCAL_PORT}:${REMOTE_PORT}" --address 0.0.0.0 >> "$LOG_FILE" 2>&1 || true
   sleep 5
 done
+
+
+eksctl get addon 
