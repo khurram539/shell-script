@@ -1,0 +1,22 @@
+alertmanager:
+  enabled: false
+
+server:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  persistentVolume:
+    enabled: false
+
+  remoteWrite:
+    - url: https://aps-workspaces.us-east-1.amazonaws.com/workspaces/ws-3e6eca24-308f-4f31-8715-5d2339c2fe30/api/v1/remote_write
+
+serviceAccounts:
+  server:
+    name: amp-iamproxy-ingest-service-account
+    create: false
