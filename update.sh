@@ -1,17 +1,65 @@
 #!/bin/bash
 
+set -euo pipefail
+
+# Detect supported package manager.
+if command -v apt >/dev/null 2>&1; then
+    PKG_MGR="apt"
+elif command -v dnf >/dev/null 2>&1; then
+    PKG_MGR="dnf"
+elif command -v yum >/dev/null 2>&1; then
+    PKG_MGR="yum"
+else
+    echo "No supported package manager found (apt/dnf/yum)."
+    exit 1
+fi
+
 # Perform a full upgrade of packages and dependencies
-sudo apt update
-sudo apt upgrade -y
-sudo apt dist-upgrade -y
+case "$PKG_MGR" in
+    apt)
+        sudo apt update
+        sudo apt upgrade -y
+        sudo apt dist-upgrade -y
+        ;;
+    dnf)
+        sudo dnf makecache
+        sudo dnf upgrade -y
+        ;;
+    yum)
+        sudo yum makecache
+        sudo yum update -y
+        ;;
+esac
 
 # Restart necessary services
-sudo systemctl restart docker
-sudo systemctl restart kubelet
+if systemctl list-unit-files | grep -q '^docker\.service'; then
+    sudo systemctl restart docker
+else
+    echo "docker.service not found. Skipping Docker restart."
+fi
+
+if systemctl list-unit-files | grep -q '^kubelet\.service'; then
+    sudo systemctl daemon-reload
+    sudo systemctl restart kubelet
+else
+    echo "kubelet.service not found. Skipping kubelet restart."
+fi
 
 # Remove old kernels and unnecessary files
-sudo apt autoremove -y
-sudo apt-get clean
+case "$PKG_MGR" in
+    apt)
+        sudo apt autoremove -y
+        sudo apt-get clean
+        ;;
+    dnf)
+        sudo dnf autoremove -y || true
+        sudo dnf clean all
+        ;;
+    yum)
+        sudo yum autoremove -y || true
+        sudo yum clean all
+        ;;
+esac
 
 # Uncomment the following lines to reload Apache configuration if needed
 # sudo systemctl reload apache2
@@ -27,7 +75,11 @@ sudo apt-get clean
  for pkg in $(pip list --outdated --format=columns | awk 'NR>2 {print $1}'); do pip install --upgrade $pkg; done # Extract package names and update each package
  pip list --outdated # List Outdated Packages
  sleep 3
- sudo apt update
+ case "$PKG_MGR" in
+     apt) sudo apt update ;;
+     dnf) sudo dnf makecache ;;
+     yum) sudo yum makecache ;;
+ esac
 # Transfer Data to S3 Bucket
 
 # Define the S3 bucket name
@@ -41,7 +93,7 @@ ITEMS=(
     "/home/kkhoja/Code/CloudFormation"
     "/home/kkhoja/Code/My-Notes"
     "/home/kkhoja/Code/Terraform-Notes"   
-    # "/home/kkhoja/Code/Kubernetes"
+    "/home/kkhoja/Code/Kubernetes"
     "/home/kkhoja/Code/shell-script"
     # "/home/kkhoja/Code/Docker"
     # "/home/kkhoja/Code/Flask"
