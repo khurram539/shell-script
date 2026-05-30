@@ -1,226 +1,217 @@
 #!/bin/bash
-
 set -euo pipefail
 
-PKG_MGR=""
-if command -v apt >/dev/null 2>&1; then
-    PKG_MGR="apt"
-elif command -v dnf >/dev/null 2>&1; then
+# Fast pre-check before sudo to avoid spawning extra wrapper processes.
+if [[ "${EUID}" -ne 0 ]]; then
+    if ps -ef | grep -E 'sudo -E bash ./update.sh|/bin/dnf ' | grep -v grep >/dev/null 2>&1; then
+        echo "Update already running"
+        ps -ef | grep -E '/bin/dnf|./update.sh' | grep -v grep || true
+        exit 1
+    fi
+fi
+
+# Elevate once at startup.
+if [[ "${EUID}" -ne 0 ]]; then
+    exec sudo -E bash "$0" "$@"
+fi
+
+LOCK_FILE="/tmp/devbox_update.lock"
+exec 200>"$LOCK_FILE"
+if ! flock -n 200; then
+    echo "Update already running"
+    ps -ef | grep -E '/bin/dnf|./update.sh' | grep -v grep || true
+    exit 1
+fi
+trap 'rm -f "$LOCK_FILE"' EXIT
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_FILE="$SCRIPT_DIR/update.txt"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+echo "===== DevBox Update Started: $(date) ====="
+
+NO_REBOOT_MODE="${NO_REBOOT_MODE:-1}"
+CHECK_INSPECTOR_FINDINGS="${CHECK_INSPECTOR_FINDINGS:-1}"
+HARDEN_ON_INSPECTOR_ERROR="${HARDEN_ON_INSPECTOR_ERROR:-1}"
+RUN_S3_BACKUP="${RUN_S3_BACKUP:-0}"
+INSPECTOR_STATUS="not-run"
+
+RUN_TARGETED_HARDENING=0
+
+if command -v dnf >/dev/null 2>&1; then
     PKG_MGR="dnf"
 elif command -v yum >/dev/null 2>&1; then
     PKG_MGR="yum"
+elif command -v apt >/dev/null 2>&1; then
+    PKG_MGR="apt"
 else
-    echo "No supported package manager found (apt/dnf/yum)."
+    echo "No supported package manager found"
     exit 1
 fi
 
 echo "Using package manager: $PKG_MGR"
 
-run_step() {
-    local message="$1"
-    shift
-    echo "$message"
-    "$@"
-}
+AWS_BIN="$(command -v aws || true)"
 
-package_installed() {
-    local package_name="$1"
-
-    if [[ "$PKG_MGR" == "apt" ]]; then
-        dpkg-query -W -f='${Status}' "$package_name" 2>/dev/null | grep -q "install ok installed"
-    elif [[ "$PKG_MGR" == "dnf" ]]; then
-        rpm -q "$package_name" >/dev/null 2>&1
+run_aws_cli() {
+    if [[ -n "${SUDO_USER:-}" && "${SUDO_USER}" != "root" ]]; then
+        local aws_home="/home/${SUDO_USER}"
+        local aws_path="/usr/local/bin:/usr/bin:/bin:${aws_home}/.local/bin"
+        sudo -u "$SUDO_USER" -H env HOME="$aws_home" PATH="$aws_path" aws "$@"
     else
-        rpm -q "$package_name" >/dev/null 2>&1
+        if [[ -z "$AWS_BIN" ]]; then
+            return 1
+        fi
+        "$AWS_BIN" "$@"
     fi
 }
 
-update_selected_packages() {
-    local packages=()
-    local package_name
+get_ec2_identity() {
+    local token
 
-    for package_name in "$@"; do
-        if package_installed "$package_name"; then
-            packages+=("$package_name")
-        fi
-    done
+    token=$(curl -sS -m 2 -X PUT \
+        "http://169.254.169.254/latest/api/token" \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" || true)
 
-    if [[ ${#packages[@]} -eq 0 ]]; then
-        return 0
+    [[ -z "$token" ]] && return 1
+
+    INSTANCE_ID=$(curl -sS -m 2 \
+        -H "X-aws-ec2-metadata-token: $token" \
+        "http://169.254.169.254/latest/meta-data/instance-id" || true)
+
+    AWS_REGION=$(curl -sS -m 2 \
+        -H "X-aws-ec2-metadata-token: $token" \
+        "http://169.254.169.254/latest/dynamic/instance-identity/document" \
+        | sed -n 's/.*"region"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+    [[ -n "${INSTANCE_ID:-}" && -n "${AWS_REGION:-}" ]]
+}
+
+inspector_has_findings() {
+    if [[ "$CHECK_INSPECTOR_FINDINGS" != "1" ]]; then
+        INSPECTOR_STATUS="disabled"
+        return 1
     fi
 
-    echo "Updating installed security-sensitive packages: ${packages[*]}"
-    if [[ "$PKG_MGR" == "apt" ]]; then
-        sudo apt install --only-upgrade -y "${packages[@]}"
-    elif [[ "$PKG_MGR" == "dnf" ]]; then
-        sudo dnf upgrade -y --refresh "${packages[@]}"
+    if ! get_ec2_identity; then
+        INSPECTOR_STATUS="metadata-unavailable"
+        return 1
+    fi
+
+    local arn
+    arn=$(run_aws_cli inspector2 list-findings \
+        --region "$AWS_REGION" \
+        --max-results 1 \
+        --filter-criteria "{\"resourceType\":[{\"comparison\":\"EQUALS\",\"value\":\"AWS_EC2_INSTANCE\"}],\"resourceId\":[{\"comparison\":\"EQUALS\",\"value\":\"$INSTANCE_ID\"}],\"findingStatus\":[{\"comparison\":\"EQUALS\",\"value\":\"ACTIVE\"}]}" \
+        --query 'findings[0].findingArn' \
+        --output text 2>/dev/null || true)
+
+    if [[ -z "$arn" ]]; then
+        INSPECTOR_STATUS="query-failed"
+        return 1
+    fi
+
+    if [[ "$arn" == "None" ]]; then
+        INSPECTOR_STATUS="no-findings"
+        return 1
+    fi
+
+    INSPECTOR_STATUS="findings-present"
+    return 0
+}
+
+echo "Refreshing system packages..."
+if [[ "$PKG_MGR" == "dnf" ]]; then
+    if [[ "$NO_REBOOT_MODE" == "1" ]]; then
+        dnf upgrade -y --refresh --exclude=kernel --exclude=kernel-core
     else
-        sudo yum update -y "${packages[@]}"
+        dnf upgrade -y --refresh
     fi
-}
-
-update_python_cryptography() {
-    if ! command -v python3 >/dev/null 2>&1; then
-        return 0
+    # Remove duplicate RPM versions; duplicates keep Inspector findings active.
+    dnf remove --duplicates -y || true
+elif [[ "$PKG_MGR" == "yum" ]]; then
+    if [[ "$NO_REBOOT_MODE" == "1" ]]; then
+        yum update -y --exclude=kernel --exclude=kernel-core
+    else
+        yum update -y
     fi
-
-    if ! python3 -m pip --version >/dev/null 2>&1; then
-        return 0
-    fi
-
-    if python3 -m pip show cryptography >/dev/null 2>&1; then
-        echo "Upgrading Python package: cryptography"
-        python3 -m pip install --upgrade --user cryptography || true
-    fi
-}
-
-check_reboot_required() {
-    if [[ "$PKG_MGR" == "apt" ]]; then
-        if [[ -f /var/run/reboot-required ]]; then
-            echo "Reboot required to finish applying kernel or core library updates."
-        fi
-        return 0
-    fi
-
-    if command -v needs-restarting >/dev/null 2>&1; then
-        if ! sudo needs-restarting -r; then
-            echo "Reboot required to finish applying kernel or core library updates."
-        fi
-    fi
-}
-
-run_step "Refreshing and upgrading system packages..." true
-if [[ "$PKG_MGR" == "apt" ]]; then
-    sudo apt update
-    sudo apt upgrade -y
-    sudo apt dist-upgrade -y
-elif [[ "$PKG_MGR" == "dnf" ]]; then
-    sudo dnf upgrade -y --refresh
 else
-    sudo yum update -y
+    apt update
+    apt upgrade -y
 fi
 
-if [[ "$PKG_MGR" == "apt" ]]; then
-    update_selected_packages firefox thunderbird openssh-client openssh-server dnsmasq libvpx7 libsndfile1
+if inspector_has_findings; then
+    RUN_TARGETED_HARDENING=1
+    echo "Inspector ACTIVE -> enabling hardening"
 else
-    update_selected_packages chromium chromium-common flatpak flatpak-libs firefox thunderbird kernel kernel-core dnsmasq protobuf protobuf-lite libvpx webkit2gtk3-jsc openssh openssh-clients python3 python-unversioned-command containernetworking-plugins libsndfile
+    echo "Inspector status: $INSPECTOR_STATUS"
+    [[ "$HARDEN_ON_INSPECTOR_ERROR" == "1" ]] && RUN_TARGETED_HARDENING=1
+fi
+
+if [[ "$RUN_TARGETED_HARDENING" == "1" ]]; then
+    echo "Running targeted hardening..."
+    if [[ "$PKG_MGR" == "dnf" ]]; then
+        dnf upgrade -y chromium chromium-common firefox thunderbird openssh openssh-clients dnsmasq protobuf protobuf-lite libvpx webkit2gtk3-jsc python3 containernetworking-plugins libsndfile || true
+    elif [[ "$PKG_MGR" == "yum" ]]; then
+        yum update -y chromium chromium-common firefox thunderbird openssh openssh-clients dnsmasq protobuf protobuf-lite libvpx webkit2gtk3-jsc python3 containernetworking-plugins libsndfile || true
+    else
+        apt install --only-upgrade -y firefox thunderbird openssh-client openssh-server dnsmasq || true
+    fi
 fi
 
 if command -v flatpak >/dev/null 2>&1; then
-    run_step "Updating Flatpak packages..." sudo flatpak update -y
+    flatpak update -y || true
 fi
 
-update_python_cryptography
+echo "Skipping pip upgrades (prevents urllib3/requests conflicts)"
 
-for service in docker kubelet; do
-    if systemctl list-unit-files | grep -q "^${service}\.service"; then
-        echo "Restarting ${service}"
-        sudo systemctl restart "$service"
-    else
-        echo "Skipping ${service}: service not installed."
+for svc in docker kubelet; do
+    if systemctl list-unit-files | grep -q "^${svc}\.service"; then
+        systemctl restart "$svc" || true
     fi
 done
 
-if [[ "$PKG_MGR" == "apt" ]]; then
-    sudo apt autoremove -y
-    sudo apt-get clean
-elif [[ "$PKG_MGR" == "dnf" ]]; then
-    sudo dnf autoremove -y || true
-    sudo dnf clean all
+if [[ "$PKG_MGR" == "dnf" ]]; then
+    dnf autoremove -y || true
+    dnf clean all || true
+elif [[ "$PKG_MGR" == "yum" ]]; then
+    yum autoremove -y || true
+    yum clean all || true
 else
-    sudo yum autoremove -y || true
-    sudo yum clean all
+    apt autoremove -y
+    apt clean
 fi
 
-check_reboot_required
-
-if [[ "$PKG_MGR" == "apt" ]]; then
-    sudo apt update
-elif [[ "$PKG_MGR" == "dnf" ]]; then
-    sudo dnf check-update || true
-else
-    sudo yum check-update || true
-fi
-# Transfer Data to S3 Bucket
-
-# Define the S3 bucket name
-S3_BUCKET="s3://aws-163544304364-repo"
-
-# Define the directories and files to back up
-ITEMS=(
-    # "/home/kkhoja/Code/100-days-of-Python"
-    "/home/kkhoja/Code/Ansible"
-    "/home/kkhoja/Code/Boto3"
-    "/home/kkhoja/Code/CloudFormation"
-    "/home/kkhoja/Code/My-Notes"
-    "/home/kkhoja/Code/Terraform-Notes"
-    "/home/kkhoja/Code/Kubernetes"
-    "/home/kkhoja/Code/shell-script"
-    # "/home/kkhoja/Code/Docker"
-    # "/home/kkhoja/Code/Flask"
-
-
-)
-
-# Arrays to keep track of successful and failed transfers
-SUCCESSFUL_ITEMS=()
-FAILED_ITEMS=()
-
-# Loop through each item and copy it to the S3 bucket
-for ITEM in "${ITEMS[@]}"; do
-    # Extract the folder or file name from the path
-    ITEM_NAME=$(basename "$ITEM")
-
-    if [ -d "$ITEM" ]; then
-        # If it's a directory, use --recursive
-        aws s3 cp "$ITEM/" "$S3_BUCKET/$ITEM_NAME/" --recursive --storage-class GLACIER_IR
-    else
-        # If it's a file, do not use --recursive
-        aws s3 cp "$ITEM" "$S3_BUCKET/$ITEM_NAME" --storage-class GLACIER_IR
+# Kernel findings remain until the system boots into the latest installed kernel.
+if [[ "$PKG_MGR" == "dnf" || "$PKG_MGR" == "yum" ]]; then
+    CURRENT_KERNEL="$(uname -r)"
+    LATEST_KERNEL="$(rpm -q --last kernel | head -n1 | awk '{print $1}' | sed 's/^kernel-//' || true)"
+    if [[ -n "$LATEST_KERNEL" && "$CURRENT_KERNEL" != "$LATEST_KERNEL" ]]; then
+        echo "Kernel reboot pending: running=$CURRENT_KERNEL latest_installed=$LATEST_KERNEL"
     fi
-
-    # Check if the command was successful
-    if [ $? -eq 0 ]; then
-        echo "Successfully backed up $ITEM to $S3_BUCKET/$ITEM_NAME"
-        SUCCESSFUL_ITEMS+=("$ITEM")
-    else
-        echo "Failed to back up $ITEM"
-        FAILED_ITEMS+=("$ITEM")
-    fi
-
-    # Pause for 5 seconds
-    sleep 2
-done
-
-# Echo the results
-echo "Backup to S3 bucket $S3_BUCKET is completed!"
-
-if [ ${#SUCCESSFUL_ITEMS[@]} -ne 0 ]; then
-    echo "Successfully backed up the following items:"
-    for ITEM in "${SUCCESSFUL_ITEMS[@]}"; do
-        echo "$ITEM"
-    done
-else
-    echo "No items were successfully backed up."
 fi
 
-if [ ${#FAILED_ITEMS[@]} -ne 0 ]; then
-    echo "Failed to back up the following items:"
-    for ITEM in "${FAILED_ITEMS[@]}"; do
-        echo "$ITEM"
+if [[ "$RUN_S3_BACKUP" == "1" ]]; then
+    echo "Running S3 backup..."
+    S3_BUCKET="s3://aws-163544304364-repo"
+    ITEMS=(
+        "/home/kkhoja/Code/Ansible"
+        "/home/kkhoja/Code/Boto3"
+        "/home/kkhoja/Code/CloudFormation"
+        "/home/kkhoja/Code/My-Notes"
+        "/home/kkhoja/Code/Terraform-Notes"
+        "/home/kkhoja/Code/Kubernetes"
+        "/home/kkhoja/Code/shell-script"
+    )
+
+    for item in "${ITEMS[@]}"; do
+        name=$(basename "$item")
+        if [[ -d "$item" ]]; then
+            run_aws_cli s3 cp "$item/" "$S3_BUCKET/$name/" --recursive --storage-class GLACIER_IR || true
+        elif [[ -f "$item" ]]; then
+            run_aws_cli s3 cp "$item" "$S3_BUCKET/$name" --storage-class GLACIER_IR || true
+        fi
     done
-else
-    echo "No items failed to back up."
 fi
-# Prompt: Notify that the update is completed
-echo "Your DevBox is updated!"
 
-#  The script is self-explanatory. It updates the packages and dependencies, restarts necessary services, removes old kernels and unnecessary files,
-#  and reloads Apache configuration if needed.
-#  You can also uncomment the lines to transfer data to S3, list outdated pip packages, or perform any other tasks you want to automate.
-#  To run the script, you can use the following command:
-#  $ bash update.sh
-
-#  You can also make the script executable and run it as follows:
-#  $ chmod +x update.sh
-
+echo "===== DevBox Update Completed: $(date) ====="
