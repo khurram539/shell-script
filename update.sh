@@ -77,7 +77,7 @@ INSPECTOR_RPM_FALLBACK=(
     chromium chromium-common firefox thunderbird flatpak flatpak-libs
     openssh openssh-clients dnsmasq protobuf protobuf-lite libvpx
     webkit2gtk3-jsc python3 containernetworking-plugins libsndfile
-    glibc glibc-all-langpacks libbrotli kernel kernel-core
+    glibc glibc-all-langpacks libbrotli kernel kernel-core python3-cryptography
 )
 
 KNOWN_PIP_PACKAGES=(cryptography Jinja2 pip virtualenv lxml ansible-core idna)
@@ -158,10 +158,27 @@ is_known_pip_package() {
     return 1
 }
 
+resolve_rpm_package_alias() {
+    local pkg="$1"
+    case "$pkg" in
+        # Inspector may report the Python module name while RHEL package uses python3-*.
+        cryptography)
+            echo "python3-cryptography"
+            ;;
+        *)
+            echo "$pkg"
+            ;;
+    esac
+}
+
 classify_inspector_package() {
     local pkg="$1"
-    if rpm -q "$pkg" &>/dev/null 2>&1; then
-        INSPECTOR_RPM_PACKAGES+=("$pkg")
+    local rpm_pkg
+
+    rpm_pkg="$(resolve_rpm_package_alias "$pkg")"
+
+    if rpm -q "$rpm_pkg" &>/dev/null 2>&1; then
+        INSPECTOR_RPM_PACKAGES+=("$rpm_pkg")
     elif run_pip_cli show "$pkg" &>/dev/null 2>&1; then
         INSPECTOR_PIP_PACKAGES+=("$pkg")
     elif is_known_pip_package "$pkg"; then
@@ -171,6 +188,20 @@ classify_inspector_package() {
     fi
 }
 
+log_cryptography_versions() {
+    local rpm_ver="not-installed"
+    local pip_ver="not-installed"
+
+    if rpm -q python3-cryptography &>/dev/null 2>&1; then
+        rpm_ver="$(rpm -q --qf '%{VERSION}-%{RELEASE}' python3-cryptography 2>/dev/null || echo installed)"
+    fi
+
+    if run_pip_cli show cryptography &>/dev/null; then
+        pip_ver="$(run_pip_cli show cryptography 2>/dev/null | awk -F': ' '/^Version:/{print $2; exit}' || echo installed)"
+    fi
+
+    say "cryptography status: rpm=${rpm_ver} pip=${pip_ver}"
+}
 # Uses small AWS CLI queries (full JSON in env vars hits ARG_MAX).
 inspector_refresh_summary() {
     local label="${1:-Inspector}"
@@ -369,6 +400,8 @@ remediate_inspector_findings() {
 
 prepare_dnf_for_upgrade
 
+say "Checking cryptography versions (pre-update)..."
+log_cryptography_versions
 # --- Always check Inspector before updates ---
 INSPECTOR_REMEDIATE=0
 say "Checking AWS Inspector (before update)..."
@@ -398,6 +431,8 @@ else
     say "Inspector status: $INSPECTOR_STATUS (skipping targeted remediation)"
 fi
 
+say "Checking cryptography versions (post-remediation)..."
+log_cryptography_versions
 for svc in docker kubelet; do
     if systemctl list-unit-files | grep -q "^${svc}\.service"; then
         systemctl restart "$svc" || true
